@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DnD 5e Ultimate Builder - 5etools Engine</title>
+    <style>
+        :root {
+            --dnd-red: #8b0000;
+            --dnd-gold: #c1a056;
+            --bg-paper: #f4f1ea;
+            --border-dark: #3e3e3e;
+        }
+
+        body {
+            font-family: 'Georgia', serif;
+            background-color: #121212;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+        }
+
+        .sheet {
+            background-color: var(--bg-paper);
+            width: 100%;
+            max-width: 1000px;
+            padding: 40px;
+            border: 12px solid var(--border-dark);
+            border-image: ridge; 
+            box-shadow: 0 0 50px rgba(0,0,0,0.8);
+            border-radius: 4px;
+        }
+
+        h1 {
+            color: var(--dnd-red);
+            text-align: center;
+            border-bottom: 3px solid var(--dnd-gold);
+            margin-top: 0;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .selectors-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+            background: rgba(0,0,0,0.05);
+            padding: 20px;
+            border-radius: 8px;
+        }
+
+        label {
+            display: block;
+            font-weight: bold;
+            color: var(--dnd-red);
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+        }
+
+        select {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid var(--dnd-gold);
+            border-radius: 4px;
+            background: white;
+            font-size: 1rem;
+        }
+
+        .stats-row {
+            display: flex;
+            justify-content: space-around;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .stat-box {
+            background: white;
+            border: 2px solid var(--dnd-red);
+            border-radius: 12px;
+            padding: 15px;
+            text-align: center;
+            width: 100px;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
+        }
+
+        .stat-box input {
+            width: 100%;
+            font-size: 2rem;
+            border: none;
+            text-align: center;
+            font-weight: bold;
+            color: #222;
+        }
+
+        .mod-circle {
+            width: 50px;
+            height: 50px;
+            background: #eee;
+            border: 1px solid #333;
+            border-radius: 50%;
+            margin: 10px auto 0;
+            line-height: 50px;
+            font-size: 1.4rem;
+            font-weight: bold;
+        }
+
+        .info-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .panel {
+            background: white;
+            border-left: 5px solid var(--dnd-gold);
+            padding: 20px;
+            min-height: 300px;
+            box-shadow: 2px 2px 10px rgba(0,0,0,0.05);
+        }
+
+        h3 { color: var(--dnd-red); margin-top: 0; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+
+        .loading-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85); color: white;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+
+<div id="loader" class="loading-overlay">
+    <h2>Invocando conocimientos...</h2>
+    <p id="load-status">Cargando archivos JSON de 5etools...</p>
+</div>
+
+<div class="sheet">
+    <h1>Constructor Definitivo de Personajes</h1>
+
+    <div class="selectors-grid">
+        <div>
+            <label>Raza</label>
+            <select id="sel-race"><option>Cargando...</option></select>
+        </div>
+        <div>
+            <label>Clase Base</label>
+            <select id="sel-class"><option>Cargando...</option></select>
+        </div>
+        <div>
+            <label>Subclase</label>
+            <select id="sel-subclass" disabled><option>Elige una clase</option></select>
+        </div>
+        <div>
+            <label>Trasfondo (Background)</label>
+            <select id="sel-bg"><option>Cargando...</option></select>
+        </div>
+    </div>
+
+    <div class="stats-row" id="stats-container">
+        </div>
+
+    <div class="info-container">
+        <div class="panel">
+            <h3>Rasgos de Clase</h3>
+            <div id="class-features">Selecciona una clase para ver sus rasgos de nivel 1.</div>
+        </div>
+        <div class="panel">
+            <h3>Rasgos de Raza y Otros</h3>
+            <div id="race-features">Información sobre tu origen y habilidades especiales.</div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- CONFIGURACIÓN DE ARCHIVOS ---
+    const CONFIG = {
+        races: 'races.json',
+        backgrounds: 'backgrounds.json',
+        classes: [
+            'class-artificer.json', 'class-barbarian.json', 'class-bard.json',
+            'class-cleric.json', 'class-druid.json', 'class-fighter.json',
+            'class-monk.json', 'class-paladin.json', 'class-ranger.json',
+            'class-rogue.json', 'class-sorcerer.json', 'class-warlock.json',
+            'class-wizard.json'
+        ]
+    };
+
+    let DB = { races: [], classes: [], backgrounds: [] };
+
+    // --- MOTOR DE CARGA ---
+    async function init() {
+        try {
+            // 1. Cargar Razas
+            const resRaces = await fetch('./data/' + CONFIG.races);
+            const jsonRaces = await resRaces.json();
+            DB.races = jsonRaces.race;
+
+            // 2. Cargar Backgrounds
+            const resBg = await fetch('./data/' + CONFIG.backgrounds);
+            const jsonBg = await resBg.json();
+            DB.backgrounds = jsonBg.background;
+
+            // 3. Cargar todas las Clases
+            for (let file of CONFIG.classes) {
+                document.getElementById('load-status').innerText = `Leyendo ${file}...`;
+                const res = await fetch('./data/' + file);
+                const json = await res.json();
+                DB.classes = [...DB.classes, ...json.class];
+            }
+
+            setupInterface();
+            document.getElementById('loader').style.display = 'none';
+        } catch (err) {
+            console.error(err);
+            document.getElementById('load-status').innerHTML = "<span style='color:red'>Error: No se pudieron leer los JSON. <br>Asegúrate de usar un Servidor Local.</span>";
+        }
+    }
+
+    function setupInterface() {
+        // Generar Inputs de Stats
+        const stats = ['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA'];
+        const container = document.getElementById('stats-container');
+        stats.forEach(s => {
+            container.innerHTML += `
+                <div class="stat-box">
+                    <label>${s}</label>
+                    <input type="number" id="val-${s}" value="10" oninput="calculateAll()">
+                    <div class="mod-circle" id="mod-${s}">+0</div>
+                </div>`;
+        });
+
+        // Llenar Selectores
+        fillSelect('sel-race', DB.races);
+        fillSelect('sel-class', DB.classes);
+        fillSelect('sel-bg', DB.backgrounds);
+
+        // Eventos
+        document.getElementById('sel-race').addEventListener('change', updateRaceInfo);
+        document.getElementById('sel-class').addEventListener('change', updateClassInfo);
+    }
+
+    function fillSelect(id, data) {
+        const sel = document.getElementById(id);
+        sel.innerHTML = `<option value="">-- Selecciona --</option>`;
+        data.forEach((item, index) => {
+            let name = item.name;
+            let source = item.source || "";
+            // Filtramos para evitar duplicados o versiones raras si quieres
+            sel.innerHTML += `<option value="${index}">${name} [${source}]</option>`;
+        });
+    }
+
+    // --- LÓGICA DE ACTUALIZACIÓN ---
+    function calculateAll() {
+        const stats = ['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA'];
+        stats.forEach(s => {
+            const val = document.getElementById(`val-${s}`).value;
+            const mod = Math.floor((val - 10) / 2);
+            document.getElementById(`mod-${s}`).innerText = (mod >= 0 ? '+' : '') + mod;
+        });
+    }
+
+    function updateRaceInfo() {
+        const race = DB.races[document.getElementById('sel-race').value];
+        if (!race) return;
+
+        // Auto-aplicar bonos de característica si existen en el JSON
+        if (race.ability) {
+            const ab = race.ability[0];
+            if (ab.str) document.getElementById('val-STR').value = 10 + ab.str;
+            if (ab.dex) document.getElementById('val-DEX').value = 10 + ab.dex;
+            if (ab.con) document.getElementById('val-CON').value = 10 + ab.con;
+            if (ab.int) document.getElementById('val-INT').value = 10 + ab.int;
+            if (ab.wis) document.getElementById('val-WIS').value = 10 + ab.wis;
+            if (ab.cha) document.getElementById('val-CHA').value = 10 + ab.cha;
+            calculateAll();
+        }
+
+        document.getElementById('race-features').innerHTML = `
+            <p><strong>Velocidad:</strong> ${race.speed} pies</p>
+            <p><strong>Tamaño:</strong> ${race.size}</p>
+            <p>${race.entries ? race.entries[0] : 'Sin descripción adicional.'}</p>
+        `;
+    }
+
+    function updateClassInfo() {
+        const cls = DB.classes[document.getElementById('sel-class').value];
+        const subSel = document.getElementById('sel-subclass');
+        
+        if (!cls) {
+            subSel.disabled = true;
+            return;
+        }
+
+        // Mostrar rasgos de nivel 1
+        let traits = cls.classFeatures ? "<ul><li>" + cls.classFeatures[0] + "</li></ul>" : "Cargando rasgos...";
+        document.getElementById('class-features').innerHTML = `
+            <p><strong>Dado de Golpe:</strong> d${cls.hd.number || 8}</p>
+            ${traits}
+        `;
+
+        // Cargar Subclases
+        if (cls.subclasses) {
+            subSel.disabled = false;
+            subSel.innerHTML = '<option value="">-- Elige Subclase --</option>';
+            cls.subclasses.forEach(sc => {
+                subSel.innerHTML += `<option value="${sc.name}">${sc.name} [${sc.source}]</option>`;
+            });
+        } else {
+            subSel.innerHTML = '<option>Sin subclases</option>';
+            subSel.disabled = true;
+        }
+    }
+
+    // Arrancar
+    init();
+</script>
+
+</body>
+</html>
